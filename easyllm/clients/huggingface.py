@@ -61,7 +61,7 @@ def stream_chat_request(client, prompt, stop, gen_kwargs, model):
     )
     # yield each generated token
     reason = None
-    for _idx, chunk in enumerate(res):
+    for chunk in res:
         # skip special tokens
         if chunk.token.special:
             continue
@@ -200,37 +200,36 @@ You can also use existing prompt builders by importing them from easyllm.prompt_
 
         if request.stream:
             return stream_chat_request(client, prompt, stop, gen_kwargs, request.model)
-        else:
-            choices = []
-            generated_tokens = 0
-            for _i in range(request.n):
-                res = client.text_generation(
-                    prompt,
-                    details=True,
-                    **gen_kwargs,
-                )
-                parsed = ChatCompletionResponseChoice(
-                    index=_i,
-                    message=ChatMessage(role="assistant", content=res.generated_text),
-                    finish_reason=res.details.finish_reason.value,
-                )
-                generated_tokens += res.details.generated_tokens
-                choices.append(parsed)
-                logger.debug(f"Response at index {_i}:\n{parsed}")
+        choices = []
+        generated_tokens = 0
+        for _i in range(request.n):
+            res = client.text_generation(
+                prompt,
+                details=True,
+                **gen_kwargs,
+            )
+            parsed = ChatCompletionResponseChoice(
+                index=_i,
+                message=ChatMessage(role="assistant", content=res.generated_text),
+                finish_reason=res.details.finish_reason.value,
+            )
+            generated_tokens += res.details.generated_tokens
+            choices.append(parsed)
+            logger.debug(f"Response at index {_i}:\n{parsed}")
             # calculate usage details
             # TODO: fix when details is fixed
-            prompt_tokens = int(len(prompt) / 4)
-            total_tokens = prompt_tokens + generated_tokens
+        prompt_tokens = len(prompt) // 4
+        total_tokens = prompt_tokens + generated_tokens
 
-            return dump_object(
-                ChatCompletionResponse(
-                    model=request.model,
-                    choices=choices,
-                    usage=Usage(
-                        prompt_tokens=prompt_tokens, completion_tokens=generated_tokens, total_tokens=total_tokens
-                    ),
-                )
+        return dump_object(
+            ChatCompletionResponse(
+                model=request.model,
+                choices=choices,
+                usage=Usage(
+                    prompt_tokens=prompt_tokens, completion_tokens=generated_tokens, total_tokens=total_tokens
+                ),
             )
+        )
 
     @classmethod
     async def acreate(cls, *args, **kwargs):
@@ -250,7 +249,7 @@ def stream_completion_request(client, prompt, stop, gen_kwargs, model):
         **gen_kwargs,
     )
     # yield each generated token
-    for _idx, chunk in enumerate(res):
+    for chunk in res:
         # skip special tokens
         if chunk.token.special:
             continue
@@ -380,7 +379,7 @@ You can also use existing prompt builders by importing them from easyllm.prompt_
 
         gen_kwargs = {
             "do_sample": True,
-            "return_full_text": True if request.echo else False,
+            "return_full_text": bool(request.echo),
             "max_new_tokens": request.max_tokens,
             "top_p": float(request.top_p),
             "temperature": float(request.temperature),
@@ -393,40 +392,39 @@ You can also use existing prompt builders by importing them from easyllm.prompt_
 
         if request.stream:
             return stream_completion_request(client, prompt, stop, gen_kwargs, request.model)
-        else:
-            choices = []
-            generated_tokens = 0
-            for _i in range(request.n):
-                res = client.text_generation(
-                    prompt,
-                    details=True,
-                    **gen_kwargs,
-                )
-                parsed = CompletionResponseChoice(
-                    index=_i,
-                    text=res.generated_text,
-                    finish_reason=res.details.finish_reason.value,
-                )
-                if request.logprobs:
-                    parsed.logprobs = res.details.tokens
+        choices = []
+        generated_tokens = 0
+        for _i in range(request.n):
+            res = client.text_generation(
+                prompt,
+                details=True,
+                **gen_kwargs,
+            )
+            parsed = CompletionResponseChoice(
+                index=_i,
+                text=res.generated_text,
+                finish_reason=res.details.finish_reason.value,
+            )
+            if request.logprobs:
+                parsed.logprobs = res.details.tokens
 
-                generated_tokens += res.details.generated_tokens
-                choices.append(parsed)
-                logger.debug(f"Response at index {_i}:\n{parsed}")
+            generated_tokens += res.details.generated_tokens
+            choices.append(parsed)
+            logger.debug(f"Response at index {_i}:\n{parsed}")
             # calcuate usage details
             # TODO: fix when details is fixed
-            prompt_tokens = int(len(prompt) / 4)
-            total_tokens = prompt_tokens + generated_tokens
+        prompt_tokens = len(prompt) // 4
+        total_tokens = prompt_tokens + generated_tokens
 
-            return dump_object(
-                CompletionResponse(
-                    model=request.model,
-                    choices=choices,
-                    usage=Usage(
-                        prompt_tokens=prompt_tokens, completion_tokens=generated_tokens, total_tokens=total_tokens
-                    ),
-                )
+        return dump_object(
+            CompletionResponse(
+                model=request.model,
+                choices=choices,
+                usage=Usage(
+                    prompt_tokens=prompt_tokens, completion_tokens=generated_tokens, total_tokens=total_tokens
+                ),
             )
+        )
 
     @classmethod
     async def acreate(cls, *args, **kwargs):
@@ -478,16 +476,18 @@ class Embedding:
         res = client.post(json={"inputs": request.input, "model": request.model, "task": "feature-extraction"})
         parsed_res = json.loads(res.decode())
         if isinstance(request.input, list):
-            for idx, i in enumerate(parsed_res):
-                emb.append(EmbeddingsObjectResponse(index=idx, embedding=i))
+            emb.extend(
+                EmbeddingsObjectResponse(index=idx, embedding=i)
+                for idx, i in enumerate(parsed_res)
+            )
         else:
             emb.append(EmbeddingsObjectResponse(index=0, embedding=parsed_res))
 
         if isinstance(res, list):
             # TODO: only approximating tokens
-            tokens = [int(len(i) / 4) for i in request.input]
+            tokens = [len(i) // 4 for i in request.input]
         else:
-            tokens = int(len(request.input) / 4)
+            tokens = len(request.input) // 4
 
         return dump_object(
             EmbeddingsResponse(

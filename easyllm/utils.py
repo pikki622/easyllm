@@ -21,14 +21,12 @@ def setup_logger() -> logging.Logger:
         # disable logging for non-master processes
         print(f"Disabling logging for non-master process with local rank {local_rank}.")
         logging.disable(logging.CRITICAL)
-        return logger
     else:
         log_level = logging.INFO
         # set the main code and the modules it uses to the same log-level according to the node
         logger.setLevel(log_level)
-        # datasets_logging.set_verbosity(log_level)
-        # trfs_logging.set_verbosity(log_level)
-        return logger
+
+    return logger
 
 
 logger = setup_logger()
